@@ -219,6 +219,7 @@ import com.android.server.wm.WindowManagerGlobalLock;
 import com.android.server.wm.WindowManagerService;
 
 import dalvik.system.VMRuntime;
+import org.rising.server.RisingServicesStarter;
 
 import java.io.File;
 import java.io.FileDescriptor;
@@ -2815,6 +2816,9 @@ public final class SystemServer implements Dumpable {
         t.traceBegin("AppCompatOverridesService");
         mSystemServiceManager.startService(APP_COMPAT_OVERRIDES_SERVICE_CLASS);
         t.traceEnd();
+
+        RisingServicesStarter risingServiceStarter = new RisingServicesStarter(mSystemServiceManager);
+        risingServiceStarter.startAllServices();
 
         // These are needed to propagate to the runnable below.
         final NetworkManagementService networkManagementF = networkManagement;

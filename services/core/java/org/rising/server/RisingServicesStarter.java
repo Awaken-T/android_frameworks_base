@@ -21,12 +21,16 @@ import com.android.server.SystemServiceManager;
 public class RisingServicesStarter {
 
     private final SystemServiceManager mSystemServiceManager;
+            
+    private static final String STORAGE_CLEANER_SERVICE_CLASS =
+            "org.rising.server.StorageCleanerService";
 
     public RisingServicesStarter(SystemServiceManager systemServiceManager) {
         this.mSystemServiceManager = systemServiceManager;
     }
 
     public void startAllServices() {
+        startService(STORAGE_CLEANER_SERVICE_CLASS);
     }
 
     private void startService(String serviceClassName) {

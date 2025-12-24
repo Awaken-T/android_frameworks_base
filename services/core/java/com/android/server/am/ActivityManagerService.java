@@ -375,6 +375,7 @@ import com.android.internal.util.function.QuadFunction;
 import com.android.internal.util.function.QuintFunction;
 import com.android.internal.util.function.UndecFunction;
 import com.android.server.AlarmManagerInternal;
+import com.android.server.AxExtServiceFactory;
 import com.android.server.DeviceIdleInternal;
 import com.android.server.DisplayThread;
 import com.android.server.IntentResolver;
@@ -5202,7 +5203,13 @@ public class ActivityManagerService extends IActivityManager.Stub
                     || "".equals(VoldProperties.encrypt_progress().orElse(""))) {
                 SystemProperties.set("dev.bootcomplete", "1");
             }
+
+            mHandler.postDelayed(() -> {
+                AxExtServiceFactory.onLateSystemReady();
+            }, 5000);
+
             mUserController.sendBootCompleted(
+
                     new IIntentReceiver.Stub() {
                         @Override
                         public void performReceive(Intent intent, int resultCode,
@@ -8374,6 +8381,8 @@ public class ActivityManagerService extends IActivityManager.Stub
             mComponentAliasResolver.onSystemReady(mConstants.mEnableComponentAlias,
                     mConstants.mComponentAliasOverrides);
             t.traceEnd(); // componentAlias
+            
+            AxExtServiceFactory.systemReady();
 
             t.traceEnd(); // PhaseActivityManagerReady
         }
@@ -18694,6 +18703,36 @@ public class ActivityManagerService extends IActivityManager.Stub
         synchronized (this) {
             return mIsSwipeToScreenshotEnabled && SystemProperties.getBoolean("sys.android.screenshot", false);
         }
+    }
+
+    @Override
+    public String getSpoofPifConfig() {
+        return AxExtServiceFactory.getSpoofManager().getPifConfig();
+    }
+
+    @Override
+    public String getSpoofPifSpoofPhotos() {
+        return AxExtServiceFactory.getSpoofManager().getPifSpoofPhotos();
+    }
+
+    @Override
+    public String getSpoofGamePropsConfig() {
+        return AxExtServiceFactory.getSpoofManager().getGamePropsConfig();
+    }
+
+    @Override
+    public String getSpoofTrickyStoreTarget() {
+        return AxExtServiceFactory.getSpoofManager().getTrickyStoreTarget();
+    }
+
+    @Override
+    public String getSpoofTrickyStoreKeyBox() {
+        return AxExtServiceFactory.getSpoofManager().getTrickyStoreKeyBox();
+    }
+
+    @Override
+    public String getSpoofTrickyStorePatch() {
+        return AxExtServiceFactory.getSpoofManager().getTrickyStorePatch();
     }
 
     boolean shouldSkipBootCompletedBroadcastForPackage(ApplicationInfo info) {

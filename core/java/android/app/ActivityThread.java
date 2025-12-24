@@ -154,6 +154,8 @@ import android.provider.Settings;
 import android.renderscript.RenderScriptCacheDir;
 import android.security.NetworkSecurityPolicy;
 import android.security.net.config.NetworkSecurityConfigProvider;
+import android.security.gameprops.GamePropsSpoofService;
+import android.security.pif.PlayIntegritySpoofService;
 import android.system.ErrnoException;
 import android.system.OsConstants;
 import android.system.StructStat;
@@ -6704,6 +6706,23 @@ public final class ActivityThread extends ClientTransactionHandler
 
         final ContextImpl appContext = ContextImpl.createAppContext(this, data.info);
         mConfigurationController.updateLocaleListFromAppContext(appContext);
+
+        GamePropsSpoofService gamePropsService = GamePropsSpoofService.getInstance();
+        if (gamePropsService.isEnabled()) {
+            gamePropsService.spoofForPackage(data.appInfo.packageName);
+        }
+
+        PlayIntegritySpoofService pifService = PlayIntegritySpoofService.getInstance();
+        if (pifService.shouldSpoof(data.processName)) {
+            pifService.spoofBuildFields(data.processName);
+            if (pifService.isSpoofSignatureEnabled()) {
+                pifService.spoofSignature();
+            }
+        }
+
+        if (pifService.shouldSpoofPhotos(data.appInfo.packageName)) {
+            pifService.spoofPhotosProps();
+        }
 
         // Initialize the default http proxy in this process.
         Trace.traceBegin(Trace.TRACE_TAG_ACTIVITY_MANAGER, "Setup proxies");

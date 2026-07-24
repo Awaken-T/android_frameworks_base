@@ -112,7 +112,7 @@ public class PixelPropsUtils {
     }
 
     public static void setProps(String packageName) {
-        if (packageName == null || packageName.isEmpty()) {
+        if (packageName == null) {
             return;
         }
         if (Arrays.asList(packagesToKeep).contains(packageName)) {

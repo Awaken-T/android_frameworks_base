@@ -16,22 +16,27 @@
 
 package com.android.systemui.media.controls.pipeline
 
+import android.app.IUriGrantsManager
 import android.app.Notification
 import android.app.Notification.FLAG_NO_CLEAR
 import android.app.Notification.MediaStyle
 import android.app.PendingIntent
+import android.app.UriGrantsManager
 import android.app.smartspace.SmartspaceAction
 import android.app.smartspace.SmartspaceConfig
 import android.app.smartspace.SmartspaceManager
 import android.app.smartspace.SmartspaceTarget
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.graphics.drawable.Icon
 import android.media.MediaDescription
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.StatusBarNotification
@@ -39,6 +44,7 @@ import android.testing.AndroidTestingRunner
 import android.testing.TestableLooper.RunWithLooper
 import androidx.media.utils.MediaConstants
 import androidx.test.filters.SmallTest
+import com.android.dx.mockito.inline.extended.ExtendedMockito
 import com.android.internal.logging.InstanceId
 import com.android.keyguard.KeyguardUpdateMonitor
 import com.android.systemui.InstanceIdSequenceFake
@@ -76,12 +82,15 @@ import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.Captor
 import org.mockito.Mock
 import org.mockito.Mockito
+import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when` as whenever
+import org.mockito.MockitoSession
 import org.mockito.junit.MockitoJUnit
+import org.mockito.quality.Strictness
 
 private const val KEY = "KEY"
 private const val KEY_2 = "KEY_2"
@@ -147,6 +156,8 @@ class MediaDataManagerTest : SysuiTestCase() {
     @Captor lateinit var stateCallbackCaptor: ArgumentCaptor<(String, PlaybackState) -> Unit>
     @Captor lateinit var sessionCallbackCaptor: ArgumentCaptor<(String) -> Unit>
     @Captor lateinit var smartSpaceConfigBuilderCaptor: ArgumentCaptor<SmartspaceConfig>
+    @Mock private lateinit var ugm: IUriGrantsManager
+    @Mock private lateinit var imageSource: ImageDecoder.Source
 
     private val instanceIdSequence = InstanceIdSequenceFake(1 shl 20)
 
@@ -157,8 +168,17 @@ class MediaDataManagerTest : SysuiTestCase() {
             1
         )
 
+    private lateinit var staticMockSession: MockitoSession
+
     @Before
     fun setup() {
+        staticMockSession =
+            ExtendedMockito.mockitoSession()
+                .mockStatic<UriGrantsManager>(UriGrantsManager::class.java)
+                .mockStatic<ImageDecoder>(ImageDecoder::class.java)
+                .strictness(Strictness.LENIENT)
+                .startMocking()
+        whenever(UriGrantsManager.getService()).thenReturn(ugm)
         foregroundExecutor = FakeExecutor(clock)
         backgroundExecutor = FakeExecutor(clock)
         uiExecutor = FakeExecutor(clock)
@@ -269,6 +289,7 @@ class MediaDataManagerTest : SysuiTestCase() {
 
     @After
     fun tearDown() {
+        staticMockSession.finishMocking()
         session.release()
         mediaDataManager.destroy()
         Settings.Secure.putInt(
@@ -517,6 +538,107 @@ class MediaDataManagerTest : SysuiTestCase() {
     }
 
     @Test
+    fun testOnNotificationAdded_emptyTitle_hasPlaceholder() {
+        // When the manager has a notification with an empty title
+        val mockPackageManager = mock(PackageManager::class.java)
+        context.setMockPackageManager(mockPackageManager)
+        whenever(mockPackageManager.getApplicationLabel(any())).thenReturn(APP_NAME)
+        whenever(controller.metadata)
+            .thenReturn(
+                metadataBuilder
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, SESSION_EMPTY_TITLE)
+                    .build()
+            )
+        mediaDataManager.onNotificationAdded(KEY, mediaNotification)
+
+        // Then a media control is created with a placeholder title string
+        assertThat(backgroundExecutor.runAllReady()).isEqualTo(1)
+        assertThat(foregroundExecutor.runAllReady()).isEqualTo(1)
+        verify(listener)
+            .onMediaDataLoaded(
+                eq(KEY),
+                eq(null),
+                capture(mediaDataCaptor),
+                eq(true),
+                eq(0),
+                eq(false)
+            )
+        val placeholderTitle = context.getString(R.string.controls_media_empty_title, APP_NAME)
+        assertThat(mediaDataCaptor.value.song).isEqualTo(placeholderTitle)
+    }
+
+    @Test
+    fun testOnNotificationAdded_blankTitle_hasPlaceholder() {
+        // GIVEN that the manager has a notification with a blank title
+        val mockPackageManager = mock(PackageManager::class.java)
+        context.setMockPackageManager(mockPackageManager)
+        whenever(mockPackageManager.getApplicationLabel(any())).thenReturn(APP_NAME)
+        whenever(controller.metadata)
+            .thenReturn(
+                metadataBuilder
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, SESSION_BLANK_TITLE)
+                    .build()
+            )
+        mediaDataManager.onNotificationAdded(KEY, mediaNotification)
+
+        // Then a media control is created with a placeholder title string
+        assertThat(backgroundExecutor.runAllReady()).isEqualTo(1)
+        assertThat(foregroundExecutor.runAllReady()).isEqualTo(1)
+        verify(listener)
+            .onMediaDataLoaded(
+                eq(KEY),
+                eq(null),
+                capture(mediaDataCaptor),
+                eq(true),
+                eq(0),
+                eq(false)
+            )
+        val placeholderTitle = context.getString(R.string.controls_media_empty_title, APP_NAME)
+        assertThat(mediaDataCaptor.value.song).isEqualTo(placeholderTitle)
+    }
+
+    @Test
+    fun testOnNotificationAdded_emptyMetadata_usesNotificationTitle() {
+        // When the app sets the metadata title fields to empty strings, but does include a
+        // non-blank notification title
+        val mockPackageManager = mock(PackageManager::class.java)
+        context.setMockPackageManager(mockPackageManager)
+        whenever(mockPackageManager.getApplicationLabel(any())).thenReturn(APP_NAME)
+        whenever(controller.metadata)
+            .thenReturn(
+                metadataBuilder
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, SESSION_EMPTY_TITLE)
+                    .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, SESSION_EMPTY_TITLE)
+                    .build()
+            )
+        mediaNotification =
+            SbnBuilder().run {
+                setPkg(PACKAGE_NAME)
+                modifyNotification(context).also {
+                    it.setSmallIcon(android.R.drawable.ic_media_pause)
+                    it.setContentTitle(SESSION_TITLE)
+                    it.setStyle(MediaStyle().apply { setMediaSession(session.sessionToken) })
+                }
+                build()
+            }
+        mediaDataManager.onNotificationAdded(KEY, mediaNotification)
+
+        // Then the media control is added using the notification's title
+        assertThat(backgroundExecutor.runAllReady()).isEqualTo(1)
+        assertThat(foregroundExecutor.runAllReady()).isEqualTo(1)
+        verify(listener)
+            .onMediaDataLoaded(
+                eq(KEY),
+                eq(null),
+                capture(mediaDataCaptor),
+                eq(true),
+                eq(0),
+                eq(false)
+            )
+        assertThat(mediaDataCaptor.value.song).isEqualTo(SESSION_TITLE)
+    }
+
+    @Test
     fun testOnNotificationRemoved_emptyTitle_notConverted() {
         // GIVEN that the manager has a notification with a resume action and empty title.
         whenever(controller.metadata)
@@ -529,8 +651,11 @@ class MediaDataManagerTest : SysuiTestCase() {
         val data = mediaDataCaptor.value
         val instanceId = data.instanceId
         assertThat(data.resumption).isFalse()
-        mediaDataManager.onMediaDataLoaded(KEY, null, data.copy(resumeAction = Runnable {}))
-
+        mediaDataManager.onMediaDataLoaded(
+            KEY,
+            null,
+            data.copy(song = SESSION_EMPTY_TITLE, resumeAction = Runnable {})
+        )
         // WHEN the notification is removed
         reset(listener)
         mediaDataManager.onNotificationRemoved(KEY)
@@ -554,17 +679,15 @@ class MediaDataManagerTest : SysuiTestCase() {
     @Test
     fun testOnNotificationRemoved_blankTitle_notConverted() {
         // GIVEN that the manager has a notification with a resume action and blank title.
-        whenever(controller.metadata)
-            .thenReturn(
-                metadataBuilder
-                    .putString(MediaMetadata.METADATA_KEY_TITLE, SESSION_BLANK_TITLE)
-                    .build()
-            )
         addNotificationAndLoad()
         val data = mediaDataCaptor.value
         val instanceId = data.instanceId
         assertThat(data.resumption).isFalse()
-        mediaDataManager.onMediaDataLoaded(KEY, null, data.copy(resumeAction = Runnable {}))
+        mediaDataManager.onMediaDataLoaded(
+            KEY,
+            null,
+            data.copy(song = SESSION_BLANK_TITLE, resumeAction = Runnable {})
+        )
 
         // WHEN the notification is removed
         reset(listener)
@@ -2096,6 +2219,66 @@ class MediaDataManagerTest : SysuiTestCase() {
 
         // We still make sure to remove it
         verify(listener).onMediaDataRemoved(eq(KEY))
+    }
+
+    @Test
+    fun testResumeMediaLoaded_hasArtPermission_artLoaded() {
+        // When resume media is loaded and user/app has permission to access the art URI,
+        whenever(
+                ugm.checkGrantUriPermission_ignoreNonSystem(
+                    anyInt(),
+                    any(),
+                    any(),
+                    anyInt(),
+                    anyInt()
+                )
+            )
+            .thenReturn(1)
+        val artwork = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        val uri = Uri.parse("content://example")
+        whenever(ImageDecoder.createSource(any(), eq(uri))).thenReturn(imageSource)
+        whenever(ImageDecoder.decodeBitmap(any(), any())).thenReturn(artwork)
+
+        val desc =
+            MediaDescription.Builder().run {
+                setTitle(SESSION_TITLE)
+                setIconUri(uri)
+                build()
+            }
+        addResumeControlAndLoad(desc)
+
+        // Then the artwork is loaded
+        assertThat(mediaDataCaptor.value.artwork).isNotNull()
+    }
+
+    @Test
+    fun testResumeMediaLoaded_noArtPermission_noArtLoaded() {
+        // When resume media is loaded and user/app does not have permission to access the art URI
+        whenever(
+                ugm.checkGrantUriPermission_ignoreNonSystem(
+                    anyInt(),
+                    any(),
+                    any(),
+                    anyInt(),
+                    anyInt()
+                )
+            )
+            .thenThrow(SecurityException("Test no permission"))
+        val artwork = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        val uri = Uri.parse("content://example")
+        whenever(ImageDecoder.createSource(any(), eq(uri))).thenReturn(imageSource)
+        whenever(ImageDecoder.decodeBitmap(any(), any())).thenReturn(artwork)
+
+        val desc =
+            MediaDescription.Builder().run {
+                setTitle(SESSION_TITLE)
+                setIconUri(uri)
+                build()
+            }
+        addResumeControlAndLoad(desc)
+
+        // Then the artwork is not loaded
+        assertThat(mediaDataCaptor.value.artwork).isNull()
     }
 
     /** Helper function to add a basic media notification and capture the resulting MediaData */

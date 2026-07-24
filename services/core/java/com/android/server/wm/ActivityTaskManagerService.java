@@ -18,6 +18,7 @@ package com.android.server.wm;
 
 import static android.Manifest.permission.BIND_VOICE_INTERACTION;
 import static android.Manifest.permission.CHANGE_CONFIGURATION;
+import static android.Manifest.permission.CONTROL_KEYGUARD;
 import static android.Manifest.permission.CONTROL_REMOTE_APP_TRANSITION_ANIMATIONS;
 import static android.Manifest.permission.INTERACT_ACROSS_USERS;
 import static android.Manifest.permission.INTERACT_ACROSS_USERS_FULL;
@@ -1427,31 +1428,44 @@ public class ActivityTaskManagerService extends IActivityTaskManager.Stub {
                 resultTo.removeResultsLocked(r, resultWho, requestCode);
             }
 
+            final int origCallingUid = Binder.getCallingUid();
+            final int origCallingPid = Binder.getCallingPid();
             final long origId = Binder.clearCallingIdentity();
             // TODO(b/64750076): Check if calling pid should really be -1.
-            final int res = getActivityStartController()
-                    .obtainStarter(intent, "startNextMatchingActivity")
-                    .setCaller(r.app.getThread())
-                    .setResolvedType(r.resolvedType)
-                    .setActivityInfo(aInfo)
-                    .setResultTo(resultTo != null ? resultTo.token : null)
-                    .setResultWho(resultWho)
-                    .setRequestCode(requestCode)
-                    .setCallingPid(-1)
-                    .setCallingUid(r.launchedFromUid)
-                    .setCallingPackage(r.launchedFromPackage)
-                    .setCallingFeatureId(r.launchedFromFeatureId)
-                    .setRealCallingPid(-1)
-                    .setRealCallingUid(r.launchedFromUid)
-                    .setActivityOptions(options)
-                    .execute();
-            Binder.restoreCallingIdentity(origId);
+            try {
+                if (options == null) {
+                    options = new SafeActivityOptions(ActivityOptions.makeBasic());
+                }
 
-            r.finishing = wasFinishing;
-            if (res != ActivityManager.START_SUCCESS) {
-                return false;
+                // Fixes b/230492947 b/337726734
+                // Prevents background activity launch through #startNextMatchingActivity
+                // launchedFromUid of the calling activity represents the app that launches it.
+                // It may have BAL privileges (i.e. the Launcher App). Using its identity to
+                // launch to launch next matching activity causes BAL.
+                // Change the realCallingUid to the calling activity's uid.
+                // In ActivityStarter, when caller is set, the callingUid and callingPid are
+                // ignored. So now both callingUid and realCallingUid is set to the caller app.
+                final int res = getActivityStartController()
+                        .obtainStarter(intent, "startNextMatchingActivity")
+                        .setCaller(r.app.getThread())
+                        .setResolvedType(r.resolvedType)
+                        .setActivityInfo(aInfo)
+                        .setResultTo(resultTo != null ? resultTo.token : null)
+                        .setResultWho(resultWho)
+                        .setRequestCode(requestCode)
+                        .setCallingPid(-1)
+                        .setCallingUid(r.launchedFromUid)
+                        .setCallingPackage(r.launchedFromPackage)
+                        .setCallingFeatureId(r.launchedFromFeatureId)
+                        .setRealCallingPid(origCallingPid)
+                        .setRealCallingUid(origCallingUid)
+                        .setActivityOptions(options)
+                        .execute();
+                r.finishing = wasFinishing;
+                return res == ActivityManager.START_SUCCESS;
+            } finally {
+                Binder.restoreCallingIdentity(origId);
             }
-            return true;
         }
     }
 
@@ -3491,6 +3505,7 @@ public class ActivityTaskManagerService extends IActivityTaskManager.Stub {
 
     @Override
     public void keyguardGoingAway(int flags) {
+        mAmInternal.enforceCallingPermission(CONTROL_KEYGUARD, "unlock keyguard");
         enforceNotIsolatedCaller("keyguardGoingAway");
         final long token = Binder.clearCallingIdentity();
         try {

@@ -51,6 +51,7 @@ import com.android.systemui.util.time.SystemClock;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.inject.Inject;
@@ -144,6 +145,10 @@ public class AppOpsControllerImpl extends BroadcastReceiver implements AppOpsCon
     protected void setListening(boolean listening) {
         mListening = listening;
         if (listening) {
+            // System UI could be restarted while ops are active, so fetch the currently active ops
+            // once System UI starts listening again.
+            fetchCurrentActiveOps();
+
             mAppOps.startWatchingActive(OPS, this);
             mAppOps.startWatchingNoted(OPS, this);
             mAudioManager.registerAudioRecordingCallback(mAudioRecordingCallback, mBGHandler);
@@ -172,6 +177,29 @@ public class AppOpsControllerImpl extends BroadcastReceiver implements AppOpsCon
             }
             synchronized (mNotedItems) {
                 mNotedItems.clear();
+            }
+        }
+    }
+
+    private void fetchCurrentActiveOps() {
+        List<AppOpsManager.PackageOps> packageOps = mAppOps.getPackagesForOps(OPS);
+        for (AppOpsManager.PackageOps op : packageOps) {
+            for (AppOpsManager.OpEntry entry : op.getOps()) {
+                for (Map.Entry<String, AppOpsManager.AttributedOpEntry> attributedOpEntry :
+                        entry.getAttributedOpEntries().entrySet()) {
+                    if (attributedOpEntry.getValue().isRunning()) {
+                        onOpActiveChanged(
+                                entry.getOpStr(),
+                                op.getUid(),
+                                op.getPackageName(),
+                                /* attributionTag= */ attributedOpEntry.getKey(),
+                                /* active= */ true,
+                                // AppOpsManager doesn't have a way to fetch attribution flags or
+                                // chain ID given an op entry, so default them to none.
+                                AppOpsManager.ATTRIBUTION_FLAGS_NONE,
+                                AppOpsManager.ATTRIBUTION_CHAIN_ID_NONE);
+                    }
+                }
             }
         }
     }
@@ -242,7 +270,7 @@ public class AppOpsControllerImpl extends BroadcastReceiver implements AppOpsCon
             if (item == null && active) {
                 item = new AppOpItem(code, uid, packageName, mClock.elapsedRealtime());
                 if (isOpMicrophone(code)) {
-                    item.setDisabled(isAnyRecordingPausedLocked(uid));
+                    item.setDisabled(isAllRecordingPausedLocked(uid));
                 } else if (isOpCamera(code)) {
                     item.setDisabled(mCameraDisabled);
                 }
@@ -444,18 +472,21 @@ public class AppOpsControllerImpl extends BroadcastReceiver implements AppOpsCon
 
     }
 
-    private boolean isAnyRecordingPausedLocked(int uid) {
+    // TODO(b/365843152) remove AudioRecordingConfiguration listening
+    private boolean isAllRecordingPausedLocked(int uid) {
         if (mMicMuted) {
             return true;
         }
         List<AudioRecordingConfiguration> configs = mRecordingsByUid.get(uid);
         if (configs == null) return false;
+        // If we are aware of AudioRecordConfigs, suppress the indicator if all of them are known
+        // to be silenced.
         int configsNum = configs.size();
         for (int i = 0; i < configsNum; i++) {
             AudioRecordingConfiguration config = configs.get(i);
-            if (config.isClientSilenced()) return true;
+            if (!config.isClientSilenced()) return false;
         }
-        return false;
+        return true;
     }
 
     private void updateSensorDisabledStatus() {
@@ -466,7 +497,7 @@ public class AppOpsControllerImpl extends BroadcastReceiver implements AppOpsCon
 
                 boolean paused = false;
                 if (isOpMicrophone(item.getCode())) {
-                    paused = isAnyRecordingPausedLocked(item.getUid());
+                    paused = isAllRecordingPausedLocked(item.getUid());
                 } else if (isOpCamera(item.getCode())) {
                     paused = mCameraDisabled;
                 }

@@ -562,12 +562,19 @@ final class InstallPackageHelper {
                     (installFlags & PackageManager.INSTALL_INSTANT_APP) != 0;
             final boolean fullApp =
                     (installFlags & PackageManager.INSTALL_FULL_APP) != 0;
+            final boolean isPackageDeviceAdmin = mPm.isPackageDeviceAdmin(packageName, userId);
+            final boolean isProtectedPackage = mPm.mProtectedPackages != null
+                    && mPm.mProtectedPackages.isPackageStateProtected(userId, packageName);
 
             // writer
             synchronized (mPm.mLock) {
                 final Computer snapshot = mPm.snapshotComputer();
                 pkgSetting = mPm.mSettings.getPackageLPr(packageName);
                 if (pkgSetting == null) {
+                    return PackageManager.INSTALL_FAILED_INVALID_URI;
+                }
+                if (instantApp && (pkgSetting.isSystem() || pkgSetting.isUpdatedSystemApp()
+                        || isPackageDeviceAdmin || isProtectedPackage)) {
                     return PackageManager.INSTALL_FAILED_INVALID_URI;
                 }
                 if (!snapshot.canViewInstantApps(callingUid, UserHandle.getUserId(callingUid))) {
@@ -4392,7 +4399,9 @@ final class InstallPackageHelper {
 
     private void assertPackageWithSharedUserIdIsPrivileged(AndroidPackage pkg)
             throws PackageManagerException {
-        if (!pkg.isPrivileged() && (pkg.getSharedUserId() != null)) {
+        if (!pkg.isPrivileged()
+                && (pkg.getSharedUserId() != null)
+                && !pkg.isLeavingSharedUid()) {
             SharedUserSetting sharedUserSetting = null;
             try {
                 sharedUserSetting = mPm.mSettings.getSharedUserLPw(pkg.getSharedUserId(),
@@ -4426,7 +4435,8 @@ final class InstallPackageHelper {
         if (((scanFlags & SCAN_AS_PRIVILEGED) == 0)
                 && !pkg.isPrivileged()
                 && (pkg.getSharedUserId() != null)
-                && !skipVendorPrivilegeScan) {
+                && !skipVendorPrivilegeScan
+                && !pkg.isLeavingSharedUid()) {
             SharedUserSetting sharedUserSetting = null;
             synchronized (mPm.mLock) {
                 try {

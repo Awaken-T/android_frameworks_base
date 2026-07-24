@@ -52,6 +52,7 @@ import android.widget.TextView;
 
 import com.android.internal.R;
 import com.android.server.autofill.AutofillManagerService;
+import com.android.server.autofill.Helper;
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -92,6 +93,7 @@ final class DialogFillUi {
     private final ComponentName mComponentName;
     private final int mThemeId;
     private final @NonNull Context mContext;
+    private final @NonNull Context mUserContext;
     private final @NonNull UiCallback mCallback;
     private final @NonNull ListView mListView;
     private final @Nullable ItemsAdapter mAdapter;
@@ -101,6 +103,8 @@ final class DialogFillUi {
     private @Nullable AnnounceFilterResult mAnnounceFilterResult;
     private boolean mDestroyed;
 
+    // System has all permissions, see b/228957088
+    @SuppressWarnings("AndroidFrameworkRequiresPermission")
     DialogFillUi(@NonNull Context context, @NonNull FillResponse response,
             @NonNull AutofillId focusedViewId, @Nullable String filterText,
             @Nullable Drawable serviceIcon, @Nullable String servicePackageName,
@@ -114,6 +118,7 @@ final class DialogFillUi {
         mComponentName = componentName;
 
         mContext = new ContextThemeWrapper(context, mThemeId);
+        mUserContext = Helper.getUserContext(mContext);
         final LayoutInflater inflater = LayoutInflater.from(mContext);
         final View decor = inflater.inflate(R.layout.autofill_fill_dialog, null);
 
@@ -197,7 +202,8 @@ final class DialogFillUi {
     }
 
     private void setHeader(View decor, FillResponse response) {
-        final RemoteViews presentation = response.getDialogHeader();
+        final RemoteViews presentation =
+                Helper.sanitizeRemoteView(response.getDialogHeader());
         if (presentation == null) {
             return;
         }
@@ -211,7 +217,7 @@ final class DialogFillUi {
         };
 
         final View content = presentation.applyWithTheme(
-                mContext, (ViewGroup) decor, interceptionHandler, mThemeId);
+                mUserContext, (ViewGroup) decor, interceptionHandler, mThemeId);
         container.addView(content);
         container.setVisibility(View.VISIBLE);
     }
@@ -232,9 +238,10 @@ final class DialogFillUi {
     }
 
     private void initialAuthenticationLayout(View decor, FillResponse response) {
-        RemoteViews presentation = response.getDialogPresentation();
+        RemoteViews presentation = Helper.sanitizeRemoteView(
+                response.getDialogPresentation());
         if (presentation == null) {
-            presentation = response.getPresentation();
+            presentation = Helper.sanitizeRemoteView(response.getPresentation());
         }
         if (presentation == null) {
             throw new RuntimeException("No presentation for fill dialog authentication");
@@ -249,7 +256,7 @@ final class DialogFillUi {
             return true;
         };
         final View content = presentation.applyWithTheme(
-                mContext, (ViewGroup) decor, interceptionHandler, mThemeId);
+                mUserContext, (ViewGroup) decor, interceptionHandler, mThemeId);
         container.addView(content);
         container.setVisibility(View.VISIBLE);
         container.setFocusable(true);
@@ -278,7 +285,8 @@ final class DialogFillUi {
             final Dataset dataset = response.getDatasets().get(i);
             final int index = dataset.getFieldIds().indexOf(focusedViewId);
             if (index >= 0) {
-                RemoteViews presentation = dataset.getFieldDialogPresentation(index);
+                RemoteViews presentation = Helper.sanitizeRemoteView(
+                        dataset.getFieldDialogPresentation(index));
                 if (presentation == null) {
                     if (sDebug) {
                         Slog.w(TAG, "not displaying UI on field " + focusedViewId + " because "
@@ -290,7 +298,7 @@ final class DialogFillUi {
                 try {
                     if (sVerbose) Slog.v(TAG, "setting remote view for " + focusedViewId);
                     view = presentation.applyWithTheme(
-                            mContext, null, interceptionHandler, mThemeId);
+                            mUserContext, null, interceptionHandler, mThemeId);
                 } catch (RuntimeException e) {
                     Slog.e(TAG, "Error inflating remote views", e);
                     continue;

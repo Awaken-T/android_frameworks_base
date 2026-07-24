@@ -34,7 +34,6 @@ import android.app.Activity;
 import android.app.ActivityOptions;
 import android.app.ActivityThread;
 import android.app.Application;
-import android.app.LoadedApk;
 import android.app.PendingIntent;
 import android.app.RemoteInput;
 import android.appwidget.AppWidgetHostView;
@@ -960,6 +959,13 @@ public class RemoteViews implements Parcelable, Filter {
             return SET_REMOTE_VIEW_ADAPTER_LIST_TAG;
         }
 
+        @Override
+        public void visitUris(@NonNull Consumer<Uri> visitor) {
+            for (RemoteViews remoteViews : list) {
+                remoteViews.visitUris(visitor);
+            }
+        }
+
         int viewTypeCount;
         ArrayList<RemoteViews> list;
     }
@@ -1081,6 +1087,13 @@ public class RemoteViews implements Parcelable, Filter {
         @Override
         public int getActionTag() {
             return SET_REMOTE_COLLECTION_ITEMS_ADAPTER_TAG;
+        }
+
+        @Override
+        public void visitUris(@NonNull Consumer<Uri> visitor) {
+            if (mItems != null) {
+              mItems.visitUris(visitor);
+            }
         }
     }
 
@@ -6028,9 +6041,22 @@ public class RemoteViews implements Parcelable, Filter {
                 return context;
             }
             try {
-                LoadedApk.checkAndUpdateApkPaths(mApplication);
-                return context.createApplicationContext(mApplication,
+                ApplicationInfo sanitizedApplication = mApplication;
+                try {
+                    // Use PackageManager as the source of truth for application information, rather
+                    // than the parceled ApplicationInfo provided by the app.
+                    sanitizedApplication = context.getPackageManager().getApplicationInfoAsUser(
+                        mApplication.packageName, 0, UserHandle.getUserId(mApplication.uid));
+                } catch(SecurityException se) {
+                    Log.d(LOG_TAG, "Unable to fetch appInfo for " + mApplication.packageName);
+                }
+
+                Context applicationContext = context.createApplicationContext(
+                        sanitizedApplication,
                         Context.CONTEXT_RESTRICTED);
+                // Get the correct apk paths while maintaining the current context's configuration.
+                return applicationContext.createConfigurationContext(
+                        context.getResources().getConfiguration());
             } catch (NameNotFoundException e) {
                 Log.e(LOG_TAG, "Package name " + mApplication.packageName + " not found");
             }
@@ -7027,6 +7053,15 @@ public class RemoteViews implements Parcelable, Filter {
                         mViews.toArray(new RemoteViews[0]),
                         mHasStableIds,
                         Math.max(mViewTypeCount, 1));
+            }
+        }
+
+        /**
+         * See {@link RemoteViews#visitUris(Consumer)}.
+         */
+        private void visitUris(@NonNull Consumer<Uri> visitor) {
+            for (RemoteViews view : mViews) {
+                view.visitUris(visitor);
             }
         }
     }

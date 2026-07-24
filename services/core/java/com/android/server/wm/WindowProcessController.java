@@ -560,6 +560,7 @@ public class WindowProcessController extends ConfigurationContainer<Configuratio
             boolean isCheckingForFgsStart) {
         return mBgLaunchController.areBackgroundActivityStartsAllowed(mPid, mUid, mInfo.packageName,
                 appSwitchState, isCheckingForFgsStart, hasActivityInVisibleTask(),
+                inPinnedWindowingMode(),
                 mInstrumentingWithBackgroundActivityStartPrivileges,
                 mAtm.getLastStopAppSwitchesTime(),
                 mLastActivityLaunchTime, mLastActivityFinishTime);
@@ -573,8 +574,18 @@ public class WindowProcessController extends ConfigurationContainer<Configuratio
         return mBgLaunchController.canCloseSystemDialogsByToken(mUid);
     }
 
-    public void setBoundClientUids(ArraySet<Integer> boundClientUids) {
-        mBgLaunchController.setBoundClientUids(boundClientUids);
+    /**
+     * Clear all bound client Uids.
+     */
+    public void clearBoundClientUids() {
+        mBgLaunchController.clearBalOptInBoundClientUids();
+    }
+
+    /**
+     * Add bound client Uid.
+     */
+    public void addBoundClientUid(int clientUid, String clientPackageName, int bindFlags) {
+        mBgLaunchController.addBoundClientUid(clientUid, clientPackageName, bindFlags);
     }
 
     /**

@@ -3288,17 +3288,31 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
                     return true;
                 }
                 // Does it contain a device admin for any user?
-                int[] users;
+                int[] allUsers = mUserManager.getUserIds();
+                int[] targetUsers;
                 if (userId == UserHandle.USER_ALL) {
-                    users = mUserManager.getUserIds();
+                    targetUsers = allUsers;
                 } else {
-                    users = new int[]{userId};
+                    targetUsers = new int[]{userId};
                 }
-                for (int i = 0; i < users.length; ++i) {
-                    if (dpm.packageHasActiveAdmins(packageName, users[i])) {
+
+                for (int i = 0; i < targetUsers.length; ++i) {
+                    if (dpm.packageHasActiveAdmins(packageName, targetUsers[i])) {
                         return true;
                     }
-                    if (isDeviceManagementRoleHolder(packageName, users[i])) {
+                }
+
+                // If a package is DMRH on a managed user, it should also be treated as an admin on
+                // that user. If that package is also a system package, it should also be protected
+                // on other users otherwise "uninstall updates" on an unmanaged user may break
+                // management on other users because apk version is shared between all users.
+                var packageState = snapshotComputer().getPackageStateInternal(packageName);
+                if (packageState == null) {
+                    return false;
+                }
+                for (int user : packageState.isSystem() ? allUsers : targetUsers) {
+                    if (mProtectedPackages.getDeviceOwnerOrProfileOwnerPackage(user) != null
+                            && isDeviceManagementRoleHolder(packageName, user)) {
                         return true;
                     }
                 }
@@ -5553,9 +5567,11 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
                 return false;
             }
 
-            // Do not allow "android" is being disabled
-            if ("android".equals(packageName)) {
-                Slog.w(TAG, "Cannot hide package: android");
+            // Don't allow hiding "android" or SysUI as it makes device unusable.
+            if ("android".equals(packageName)
+                    || LocalServices.getService(PackageManagerInternal.class)
+                            .getSystemUiServiceComponent().getPackageName().equals(packageName)) {
+                Slog.w(TAG, "Cannot hide package: " + packageName);
                 return false;
             }
 
@@ -5928,9 +5944,26 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
                 packageStateWrite.setMimeGroup(mimeGroup, mimeTypesSet);
             });
             if (mComponentResolver.updateMimeGroup(snapshotComputer(), packageName, mimeGroup)) {
-                Binder.withCleanCallingIdentity(() ->
-                        mPreferredActivityHelper.clearPackagePreferredActivities(packageName,
-                                UserHandle.USER_ALL));
+                Binder.withCleanCallingIdentity(() -> {
+                    mPreferredActivityHelper.clearPackagePreferredActivities(packageName,
+                            UserHandle.USER_ALL);
+                    // Send the ACTION_PACKAGE_CHANGED when the mimeGroup has changes
+                    final Computer snapShot = snapshotComputer();
+                    final ArrayList<String> components = new ArrayList<>(
+                            Collections.singletonList(packageName));
+                    final int appId = packageState.getAppId();
+                    final int[] userIds = resolveUserIds(UserHandle.USER_ALL);
+                    final String reason = "The mimeGroup is changed";
+                    for (int i = 0; i < userIds.length; i++) {
+                        final PackageUserStateInternal pkgUserState =
+                                packageState.getUserStates().get(userIds[i]);
+                        if (pkgUserState != null && pkgUserState.isInstalled()) {
+                            final int packageUid = UserHandle.getUid(userIds[i], appId);
+                            sendPackageChangedBroadcast(snapShot, packageName,
+                                    true /* dontKillApp */, components, packageUid, reason);
+                        }
+                    }
+                });
             }
 
             scheduleWriteSettings();

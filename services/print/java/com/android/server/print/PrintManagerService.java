@@ -27,6 +27,7 @@ import android.annotation.UserIdInt;
 import android.app.ActivityManager;
 import android.app.admin.DevicePolicyManagerInternal;
 import android.content.ComponentName;
+import android.content.ContentProvider;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -254,10 +255,36 @@ public final class PrintManagerService extends SystemService {
             }
             final long identity = Binder.clearCallingIdentity();
             try {
-                return userState.getCustomPrinterIcon(printerId);
+                Icon icon = userState.getCustomPrinterIcon(printerId);
+                return validateIconUserBoundary(icon, resolvedUserId);
             } finally {
                 Binder.restoreCallingIdentity(identity);
             }
+        }
+
+        /**
+         * Validates the custom printer icon to see if it's not in the calling user space.
+         * If the condition is not met, return null. Otherwise, return the original icon.
+         *
+         * @param icon
+         * @return icon (validated)
+         */
+        private Icon validateIconUserBoundary(Icon icon, int resolvedCallingId) {
+            // Refer to Icon#getUriString for context. The URI string is invalid for icons of
+            // incompatible types.
+            if (icon != null && (icon.getType() == Icon.TYPE_URI
+                    || icon.getType() == Icon.TYPE_URI_ADAPTIVE_BITMAP)) {
+
+                final int iconUserId = ContentProvider.getUserIdFromAuthority(
+                        icon.getUri().getAuthority(), resolvedCallingId);
+                synchronized (mLock) {
+                    // Only the current group members can get the printer icons.
+                    if (resolveCallingProfileParentLocked(iconUserId) != getCurrentUserId()) {
+                        return null;
+                    }
+                }
+            }
+            return icon;
         }
 
         @Override

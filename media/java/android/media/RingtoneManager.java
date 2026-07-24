@@ -837,7 +837,7 @@ public class RingtoneManager {
 
         return ringtoneUri;
     }
-    
+
     /**
      * Sets the {@link Uri} of the default sound for a given sound type.
      *
@@ -875,6 +875,25 @@ public class RingtoneManager {
         if(!isInternalRingtoneUri(ringtoneUri)) {
             ringtoneUri = ContentProvider.maybeAddUserId(ringtoneUri, context.getUserId());
         }
+
+        if (ringtoneUri != null) {
+            final String mimeType = resolver.getType(ringtoneUri);
+            if (mimeType == null) {
+                Log.e(TAG, "setActualDefaultRingtoneUri for URI:" + ringtoneUri
+                        + " ignored: failure to find mimeType (no access from this context?)");
+                return;
+            }
+            if (!(mimeType.startsWith("audio/") || mimeType.equals("application/ogg")
+                    || mimeType.equals("application/x-flac")
+                    // also check for video ringtones
+                    || mimeType.startsWith("video/") || mimeType.equals("application/mp4"))) {
+                Log.e(TAG, "setActualDefaultRingtoneUri for URI:" + ringtoneUri
+                        + " ignored: associated MIME type:" + mimeType
+                        + " is not a recognized audio or video type");
+                return;
+            }
+        }
+
         Settings.System.putStringForUser(resolver, setting,
                 ringtoneUri != null ? ringtoneUri.toString() : null, context.getUserId());
 

@@ -35,7 +35,6 @@ public class PixelPropsUtils {
 
     private static final String SAMSUNG = "com.samsung.";
 
-    private static final Map<String, Object> propsToChangeGeneric;
     private static final Map<String, Object> propsToChangePixel5;
     private static final Map<String, Object> propsToChangePixel7Pro;
     private static final Map<String, Object> propsToChangePixelXL;
@@ -90,9 +89,6 @@ public class PixelPropsUtils {
     static {
         propsToKeep = new HashMap<>();
         propsToKeep.put("com.google.android.settings.intelligence", new ArrayList<>(Collections.singletonList("FINGERPRINT")));
-        propsToChangeGeneric = new HashMap<>();
-        propsToChangeGeneric.put("TYPE", "user");
-        propsToChangeGeneric.put("TAGS", "release-keys");
         propsToChangePixel7Pro = new HashMap<>();
         propsToChangePixel7Pro.put("BRAND", "google");
         propsToChangePixel7Pro.put("MANUFACTURER", "Google");
@@ -122,8 +118,6 @@ public class PixelPropsUtils {
     }
 
     public static void setProps(String packageName) {
-        propsToChangeGeneric.forEach((k, v) -> setPropValue(k, v));
-
         if (packageName == null || packageName.isEmpty()) {
             return;
         }

@@ -107,7 +107,6 @@ import android.os.storage.VolumeInfo;
 import android.permission.PermissionControllerManager;
 import android.permission.PermissionManager;
 import android.provider.Settings;
-import android.security.pif.PlayIntegritySpoofService;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
@@ -822,17 +821,6 @@ public class ApplicationPackageManager extends PackageManager {
 
     @Override
     public boolean hasSystemFeature(String name, int version) {
-        // We check for system features in the following order:
-        //    * Build time-defined system features (constant, very efficient)
-        //    * SDK-defined system features (cached at process start, very efficient)
-        //    * IPC-retrieved system features (lazily cached, requires per-feature IPC)
-        // TODO(b/375000483): Refactor all of this logic, including flag queries, into
-        // the SystemFeaturesCache class after initial rollout and validation.
-        PlayIntegritySpoofService pifService = PlayIntegritySpoofService.getInstance();
-        Boolean spoofedResult = pifService.hasSystemFeature(name, version);
-        if (spoofedResult != null) {
-            return spoofedResult;
-        }
         return mHasSystemFeatureCache.query(new HasSystemFeatureQuery(name, version));
     }
 

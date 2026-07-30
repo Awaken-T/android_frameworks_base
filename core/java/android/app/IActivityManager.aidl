@@ -770,16 +770,4 @@ interface IActivityManager {
      *  Should disable touch if three fingers to screen shot is active?
      */
     boolean isSwipeToScreenshotGestureActive();
-
-    String getSpoofPifConfig();
-
-    String getSpoofPifSpoofPhotos();
-
-    String getSpoofGamePropsConfig();
-
-    String getSpoofTrickyStoreTarget();
-
-    String getSpoofTrickyStoreKeyBox();
-
-    String getSpoofTrickyStorePatch();
 }

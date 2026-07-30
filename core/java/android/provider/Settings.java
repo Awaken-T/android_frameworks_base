@@ -11892,37 +11892,6 @@ public final class Settings {
          * @hide
          */
         public static final String STATUS_BAR_QUICK_QS_PULLDOWN = "status_bar_quick_qs_pulldown";
-
-        /**
-         * @hide
-         */
-        public static final String SPOOF_PIF_CONFIG = "spoof_pif_config";
-
-        /**
-         * @hide
-         */
-        public static final String SPOOF_PIF_PHOTOS = "spoof_pif_photos";
-
-        /**
-         * @hide
-         */
-        public static final String SPOOF_GAMEPROPS_CONFIG = "spoof_gameprops_config";
-
-        /**
-         * @hide
-         */
-        public static final String SPOOF_TRICKYSTORE_TARGET = "spoof_trickystore_target";
-
-        /**
-         * @hide
-         */
-        public static final String SPOOF_TRICKYSTORE_KEYBOX = "spoof_trickystore_keybox";
-
-        /**
-         * @hide
-         */
-        public static final String SPOOF_TRICKYSTORE_PATCH = "spoof_trickystore_patch";
-        
     }
 
     /**

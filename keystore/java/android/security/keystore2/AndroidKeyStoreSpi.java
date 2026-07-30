@@ -77,9 +77,6 @@ import java.util.Set;
 
 import javax.crypto.SecretKey;
 
-import android.security.trickystore.TrickyStoreService;
-import android.security.trickystore.CertificateHacker;
-
 /**
  * A java.security.KeyStore interface for the Android KeyStore. An instance of
  * it can be created via the {@link java.security.KeyStore#getInstance(String)
@@ -105,8 +102,6 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
 
     private KeyStore2 mKeyStore;
     private @KeyProperties.Namespace int mNamespace = KeyProperties.NAMESPACE_APPLICATION;
-    
-    private static final ThreadLocal<Boolean> sInHack = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     @Override
     public Key engineGetKey(String alias, char[] password) throws NoSuchAlgorithmException,
@@ -200,7 +195,7 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
 
         caList[0] = leaf;
 
-        return hackCertificateChainIfNeeded(caList);
+        return caList;
     }
 
     @Override
@@ -246,39 +241,6 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
             Log.w(NAME, "Couldn't parse certificates in keystore", e);
             return new ArrayList<X509Certificate>();
         }
-    }
-
-    private static Certificate[] hackCertificateChainIfNeeded(Certificate[] chain) {
-        if (chain == null || chain.length == 0) {
-            return chain;
-        }
-        if (sInHack.get()) {
-            return chain;
-        }
-        sInHack.set(Boolean.TRUE);
-        try {
-            TrickyStoreService service = TrickyStoreService.getInstance();
-            if (!service.hasKeyboxes()) {
-                return chain;
-            }
-
-            int callingUid = android.os.Binder.getCallingUid();
-            String[] packages = android.app.ActivityThread.getPackageManager()
-                    .getPackagesForUid(callingUid);
-
-            if (service.needHack(callingUid, packages)) {
-                Certificate[] hackedChain = CertificateHacker.hackCertificateChain(chain);
-                if (hackedChain != null) {
-                    Log.d(TAG, "TrickyStore: Hacked certificate chain for uid=" + callingUid);
-                    return hackedChain;
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "TrickyStore: Failed to hack certificate chain", e);
-        } finally {
-            sInHack.set(Boolean.FALSE);
-        }
-        return chain;
     }
 
     @Override

@@ -911,7 +911,6 @@ public final class SystemServer implements Dumpable {
             // can start using Typeface. Note that fonts are required not only for text rendering,
             // but also for some text operations (e.g. TextUtils.makeSafeForPresentation()).
             if (Typeface.ENABLE_LAZY_TYPEFACE_INITIALIZATION) {
-            AxExtServiceFactory.init(mSystemContext);
                 Typeface.loadPreinstalledSystemFontMap();
             }
 
@@ -1135,7 +1134,6 @@ public final class SystemServer implements Dumpable {
         mActivityManagerService.setSystemServiceManager(mSystemServiceManager);
         mActivityManagerService.setInstaller(installer);
         mWindowManagerGlobalLock = atm.getGlobalLock();
-        AxExtServiceFactory.injectActivityManagerService(mActivityManagerService);
         t.traceEnd();
 
         // Data loader manager service needs to be started before package manager
@@ -1281,9 +1279,6 @@ public final class SystemServer implements Dumpable {
                     t.traceEnd();
                 }
             }
-
-        AxExtServiceFactory.injectPackageManagerservice(mPackageManagerService);
-
         }
 
         t.traceBegin("StartUserManagerService");
@@ -1316,14 +1311,6 @@ public final class SystemServer implements Dumpable {
         // Manages Overlay packages
         t.traceBegin("StartOverlayManagerService");
         mSystemServiceManager.startService(new OverlayManagerService(mSystemContext));
-        t.traceEnd();
-
-        t.traceBegin("InitVBMetaDigest");
-        try {
-            android.security.trickystore.AttestationUtils.initBootHash();
-        } catch (Throwable e) {
-            Slog.e(TAG, "Failed to init VBMeta digest", e);
-        }
         t.traceEnd();
 
         // Manages Resources packages
@@ -1606,7 +1593,6 @@ public final class SystemServer implements Dumpable {
             mSystemServiceManager.startBootPhase(t, SystemService.PHASE_WAIT_FOR_SENSOR_SERVICE);
             wm = WindowManagerService.main(context, inputManager, !mFirstBoot, mOnlyCore,
                     new PhoneWindowManager(), mActivityManagerService.mActivityTaskManager);
-            AxExtServiceFactory.injectWindowManagerService(wm);
             ServiceManager.addService(Context.WINDOW_SERVICE, wm, /* allowIsolated= */ false,
                     DUMP_FLAG_PRIORITY_CRITICAL | DUMP_FLAG_PROTO);
             ServiceManager.addService(Context.INPUT_SERVICE, inputManager,

@@ -17,6 +17,11 @@ import android.system.keystore2.KeyEntryResponse;
 import android.system.keystore2.KeyMetadata;
 import android.util.Log;
 
+// TAMBAHAN IMPORT UNTUK MEMBACA DATABASE SETTINGS & VERSI OS DYNAMIC
+import android.app.ActivityThread;
+import android.os.Build;
+import android.provider.Settings;
+
 import com.android.internal.util.awaken.KeyboxChainGenerator.KeyGenParameters;
 
 import java.security.cert.Certificate;
@@ -37,12 +42,32 @@ public class KeyboxImitationHooks {
     private static boolean hasAttestKeyDescriptor = false;
     private static Integer keyAlgo;
 
+    /**
+     * Helper internal tambahan untuk mengecek status Fitur Fix VBMETA dari Settings
+     */
+    private static boolean isVbmetaPatched() {
+        try {
+            var context = ActivityThread.currentApplication();
+            if (context != null) {
+                String isFx = Settings.Secure.getString(
+                    context.getContentResolver(), 
+                    "spoof_vbmeta_fix"
+                );
+                return "1".equals(isFx);
+            }
+        } catch (Exception e) {
+            // Mengabaikan error pada booting awal agar logcat tidak kotor
+        }
+        return false;
+    }
+
     public static KeyEntryResponse onGetKeyEntry(KeyDescriptor descriptor) {
         if (!KeyProviderManager.isKeyboxAvailable()) {
             return null;
         }
 
-        if (mFailed) {
+        // TAMBAHAN FIXVBMETA: Jika fitur aktif, bypass pengecekan kegagalan mFailed
+        if (mFailed && !isVbmetaPatched()) {
             return null;
         }
 
@@ -166,8 +191,36 @@ public class KeyboxImitationHooks {
             a.securityLevel = params.securityLevel;
             authorizations.add(a);
 
-            // TODO: ORIGIN, OS_VERSION, OS_PATCHLEVEL, VENDOR_PATCHLEVEL, BOOT_PATCHLEVEL,
-            // CREATION_DATETIME, USER_ID
+            // -------------------------------------------------------------
+            // DYNAMIC INJEKSI FIXVBMETA (Deteksi Otomatis untuk Semua Versi OS)
+            // -------------------------------------------------------------
+            if (isVbmetaPatched()) {
+                int currentSdkVersion = Build.VERSION.SDK_INT;
+                int osVersionValue = 130000; // Nilai dasar Android 13
+
+                if (currentSdkVersion == 34) {       // Android 14
+                    osVersionValue = 140000;
+                } else if (currentSdkVersion == 35) { // Android 15
+                    osVersionValue = 150000;
+                } else if (currentSdkVersion >= 36) { // Android 16+
+                    osVersionValue = 160000;
+                }
+
+                a = new Authorization();
+                a.keyParameter = new KeyParameter();
+                a.keyParameter.tag = Tag.OS_VERSION;
+                a.keyParameter.value = KeyParameterValue.integer(osVersionValue);
+                a.securityLevel = params.securityLevel;
+                authorizations.add(a);
+
+                a = new Authorization();
+                a.keyParameter = new KeyParameter();
+                a.keyParameter.tag = Tag.OS_PATCHLEVEL;
+                a.keyParameter.value = KeyParameterValue.integer(202608); // Patchlevel Agustus 2026
+                a.securityLevel = params.securityLevel;
+                authorizations.add(a);
+            }
+            // -------------------------------------------------------------
 
             metadata.authorizations = authorizations.toArray(new Authorization[0]);
             response.metadata = metadata;
@@ -180,7 +233,12 @@ public class KeyboxImitationHooks {
     }
 
     public static void setFailFlag(boolean flag) {
-        mFailed = flag;
+        // TAMBAHAN FIXVBMETA: Paksa status mFailed tetap bersih jika fitur aktif
+        if (isVbmetaPatched()) {
+            mFailed = false;
+        } else {
+            mFailed = flag;
+        }
     }
 
     public static void putAlgo(int algo) {
